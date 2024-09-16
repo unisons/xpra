@@ -1,0 +1,189 @@
+@startuml
+skinparam style strictuml
+
+class ClientDisplayMixin {
+    def set_screen_size(self, screen_sizes: Iterable) 
+}
+
+StubSourceMixin <|-- ClientDisplayMixin
+
+class DisplayManager {
+    xpra/server/mixins/display.py
+    def configure_best_screen_size(self) -> tuple[int, int]:
+        return self.get_root_window_size()
+}
+
+class ServerBaseClass {
+    xpra/server/base.py
+}
+
+class "Lots more..." as LotsMoreServers
+
+class ServerBase {
+    xpra/server/base.py
+}
+
+class GTKServerBase {
+    xpra/server/gtk_server.py
+    def configure_best_screen_size(self) -> tuple[int, int]:
+        return self.get_root_window_size()
+} 
+
+class X11ServerCore {
+    xpra/x11/server/core.py
+    def set_screen_size(self, desired_w: int, desired_h: int):
+}
+
+class X11ServerBase {
+    xpra/x11/server/base.py
+}
+
+class SeamlessServer {
+    xpra/x11/server/seamless.py
+    def set_screen_size(self, desired_w: int, desired_h: int)
+}
+
+DisplayManager <|-- ServerBaseClass
+AudioServer <|-- ServerBaseClass
+ClipboardServer <|-- ServerBaseClass
+WindowServer <|-- ServerBaseClass
+LotsMoreServers <|-- ServerBaseClass
+
+X11ServerBase <|-- SeamlessServer
+
+X11ServerCore <|-- X11ServerBase
+
+ServerBase <|-- GTKServerBase
+
+GTKServerBase <|-- X11ServerCore
+
+GObject <|-- SeamlessServer
+
+ServerBaseClass <|-- ServerBase
+
+StubServerMixin <|-- DisplayManager
+
+ServerBase *..> ClientDisplayMixin
+
+class DesktopServerBase {
+    xpra/x11/desktop/base.py
+}
+
+class XpraDesktopServer {
+    xpra/x11/desktop/desktop_server.py
+}
+
+class XpraMonitorServer {
+    xpra/x11/desktop/monitor_server.py
+}
+
+class RFBServer {
+    xpra/server/rfb/server.py
+    Adds RFB packet handler to a server.
+}
+
+GObject <|-- DesktopServerBase
+X11ServerBase <|-- DesktopServerBase
+RFBServer <|-- DesktopServerBase
+
+DesktopServerBase <|-- XpraDesktopServer
+DesktopServerBase <|-- XpraMonitorServer
+
+@enduml
+
+@startuml
+skinparam style strictuml
+
+-> DisplayManager ++ : parse_screen_info(ss)\n : do_parse_screen_info(ss, ss.desktop_size)
+
+' DisplayManager ->? : log_screen_size(dw, dh, ss.screen_sizes)
+
+DisplayManager -> DisplayManager ++ : configure_best_screen_size()
+  DisplayManager -> DisplayManager : get_root_window_size() : <b>raise NOT_IMPL_Exception</b>
+return (width, height)
+
+DisplayManager -> DisplayManager ++ : get_max_screen_size()
+  DisplayManager -> DisplayManager : get_root_window_size() : <b>raise NOT_IMPL_Exception</b>
+return (width, height)
+
+DisplayManager -> DisplayManager ++ : set_desktop_geometry_attributes(minW, minH)
+return
+
+DisplayManager -> DisplayManager ++ : set_icc_profile()
+return
+
+DisplayManager -> DisplayManager ++ : apply_refresh_rate(ss)
+return
+
+<<-- DisplayManager -- 
+@enduml
+
+@startuml
+skinparam style strictuml
+
+title SeamlessServer Case
+
+participant DisplayManager
+participant ServerBase
+participant X11ServerCore
+participant X11ServerBase
+participant SeamlessServer 
+
+-> ServerBase ++ : hello_oked(proto, c: typed_dict, auth_caps: dict)
+
+note over ServerBase
+# server_source update and used
+cc_class = self.get_client_connection_class(c)
+ss = cc_class(proto, drop_client,
+              self.session_name, self,
+              self.setting_changed,
+              self._socket_dir, self.unix_socket_paths, not request,
+              self.bandwidth_limit, self.bandwidth_detection,
+              )
+self._server_sources[proto] = ss
+end note
+
+return
+
+-> DisplayManager ++ : parse_screen_info(ss)\n : do_parse_screen_info(ss, ss.desktop_size)
+
+' DisplayManager ->? : log_screen_size(dw, dh, ss.screen_sizes)
+
+DisplayManager -> X11ServerBase ++ : override configure_best_screen_size()
+  X11ServerBase -> X11ServerCore ++ : super().configure_best_supre_size()
+    X11ServerCore -> SeamlessServer ++ : set_screen_size(w, h) 
+      alt DUMMY_MONITORS AND ...
+        SeamlessServer -> X11ServerCore ++ : mirror_client_monitor_layout() 
+          X11ServerCore -> ClientDisplayMixin : get_monitor_definitions() : mdef
+          X11ServerCore -> xpra.common : adjust_monitor_refresh_rate(refreshRate, mdef)
+          X11ServerCore -> RandRBindingsInstance <<singleton>> : set_crtc_config(mdef)
+        return
+      end alt
+      alt mirror_client_monitor_layout() is not called or not successful
+        SeamlessServer -> X11ServerCore ++ : super().set_screen_size()
+          X11ServerCore -> SeamlessServer ++ : set_dpi(xdpi, ydpi)
+          return
+          X11ServerCore -> X11ServerCore ++ : get_best_screen_size(desired_w, desired_h)
+          return (w, h)
+          X11ServerCore -> RandRBindingsInstance <<singleton>> : set_screen_size(mdef)
+        return
+      end alt
+    return
+  return (width, height)
+return (width, height)
+
+DisplayManager -> DisplayManager ++ : get_max_screen_size()
+  DisplayManager -> DisplayManager : get_root_window_size():\n  <b>raise NOT_IMPL_Exception</b>
+return (width, height)
+
+DisplayManager -> DisplayManager ++ : set_desktop_geometry_attributes(minW, minH)
+return
+
+DisplayManager -> DisplayManager ++ : set_icc_profile()
+return
+
+DisplayManager -> DisplayManager ++ : apply_refresh_rate(ss)
+return
+
+<<-- DisplayManager -- 
+@enduml
